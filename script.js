@@ -91,10 +91,16 @@ function getCustomerBalance(c) {
     return bal;
 }
 
-function renderCustomers() {
+function renderCustomers(searchTerm = '') {
     const list = document.getElementById('customersList');
     list.innerHTML = '';
-    customers.forEach(c => {
+    
+    let filteredCustomers = customers;
+    if (searchTerm.trim() !== '') {
+        filteredCustomers = customers.filter(c => c.name.includes(searchTerm));
+    }
+    
+    filteredCustomers.forEach(c => {
         let bal = getCustomerBalance(c);
         list.innerHTML += `
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center active:scale-95 transition cursor-pointer" onclick="openDetails('${c.id}')">
@@ -108,7 +114,14 @@ function renderCustomers() {
                 </div>
             </div>`;
     });
-    if(!customers.length) list.innerHTML = '<div class="text-center text-slate-400 mt-10"><i class="fa-solid fa-users text-4xl mb-2"></i><br>لا يوجد زبائن مضافين</div>';
+    
+    if(!filteredCustomers.length) {
+        list.innerHTML = '<div class="text-center text-slate-400 mt-10"><i class="fa-solid fa-users text-4xl mb-2"></i><br>لا يوجد زبائن</div>';
+    }
+}
+
+function searchCustomers(val) {
+    renderCustomers(val);
 }
 
 function saveCustomer() {
