@@ -1,11 +1,13 @@
 // ================ قواعد البيانات المدمجة بالمتصفح ================
 let customers = JSON.parse(localStorage.getItem('almoamal_c_db')) || [];
 let inventory = JSON.parse(localStorage.getItem('almoamal_i_db')) || [];
+let monthlySales = JSON.parse(localStorage.getItem('almoamal_ms_db')) || [];
 let activeCustomer = null;
 
 function saveData() {
     localStorage.setItem('almoamal_c_db', JSON.stringify(customers));
     localStorage.setItem('almoamal_i_db', JSON.stringify(inventory));
+    localStorage.setItem('almoamal_ms_db', JSON.stringify(monthlySales));
     updateAlertBadge();
 }
 
@@ -38,6 +40,7 @@ function switchTab(tab, btn) {
     if(tab === 'customers') renderCustomers();
     if(tab === 'inventory') renderInventory();
     if(tab === 'alerts') renderAlerts();
+    if(tab === 'monthlysale') renderMonthlySales();
 }
 
 // ================ التحكم بالنوافذ المنبثقة ================
@@ -399,6 +402,166 @@ function updateAlertBadge() {
     else { badge.classList.add('hidden'); }
 }
 
+// ================ البيع الشهري ================
+
+function openMonthlySaleModal() {
+    document.getElementById('ms-id').value = '';
+    document.getElementById('ms-c-name').value = '';
+    document.getElementById('ms-phone').value = '';
+    document.getElementById('ms-price').value = '';
+    document.getElementById('ms-search').value = '';
+    document.getElementById('ms-item-id').value = '';
+    document.getElementById('monthlySaleModalTitle').innerText = 'إضافة عملية بيع';
+    openModal('monthlySaleModal');
+}
+
+function searchMsInventory(val) {
+    let dropdown = document.getElementById('ms-dropdown');
+    dropdown.innerHTML = '';
+    if(!val.trim()) { dropdown.classList.add('hidden'); return; }
+    
+    let matches = inventory.filter(i => i.name.includes(val) && i.qty > 0);
+    if(matches.length > 0) {
+        matches.forEach(m => {
+            dropdown.innerHTML += `
+                <div class="p-3 border-b border-slate-50 hover:bg-slate-50 cursor-pointer font-bold text-slate-700 flex justify-between items-center" onclick="selectMsItem('${m.id}')">
+                    <span>${m.name}</span> <span class="text-xs bg-light text-primary px-2 py-1 rounded">المخزون: ${m.qty}</span>
+                </div>`;
+        });
+        dropdown.classList.remove('hidden');
+    } else {
+        dropdown.innerHTML = '<div class="p-3 text-slate-400 text-sm font-bold text-center">لا توجد مادة متوفرة</div>';
+        dropdown.classList.remove('hidden');
+    }
+}
+
+function selectMsItem(id) {
+    let item = inventory.find(i => i.id == id);
+    document.getElementById('ms-search').value = item.name;
+    document.getElementById('ms-item-id').value = item.id;
+    document.getElementById('ms-dropdown').classList.add('hidden');
+}
+
+function saveMonthlySale() {
+    let id = document.getElementById('ms-id').value;
+    let cName = document.getElementById('ms-c-name').value;
+    let phone = document.getElementById('ms-phone').value;
+    let price = parseMoney(document.getElementById('ms-price').value);
+    let itemName = document.getElementById('ms-search').value;
+    let itemId = document.getElementById('ms-item-id').value;
+
+    if(!cName || !price) return toastMsg('يرجى ملء اسم الزبون والسعر', 'error');
+
+    let d = new Date();
+    let month = d.getMonth() + 1;
+    let dateStr = d.toLocaleDateString('en-GB');
+
+    if(id) {
+        let idx = monthlySales.findIndex(m => m.id == id);
+        monthlySales[idx] = { ...monthlySales[idx], customerName: cName, phone: phone, price: price, itemName: itemName, itemId: itemId };
+    } else {
+        if(itemId) {
+            let invIdx = inventory.findIndex(i => i.id == itemId);
+            if(invIdx >= 0 && inventory[invIdx].qty > 0) {
+                inventory[invIdx].qty -= 1;
+            }
+        }
+        monthlySales.push({ 
+            id: Date.now().toString(), 
+            customerName: cName, 
+            phone: phone, 
+            price: price, 
+            itemName: itemName, 
+            itemId: itemId, 
+            date: dateStr, 
+            month: month 
+        });
+    }
+    
+    saveData(); 
+    closeModal('monthlySaleModal'); 
+    renderMonthlySales(); 
+    toastMsg('تم حفظ العملية');
+}
+
+function renderMonthlySales() {
+    const list = document.getElementById('monthlySaleList');
+    list.innerHTML = '';
+    
+    let filterMonth = parseInt(document.getElementById('msMonthFilterList').value);
+    let filtered = monthlySales;
+    
+    if(filterMonth > 0) {
+        filtered = monthlySales.filter(m => m.month === filterMonth);
+    }
+
+    let totalProfits = 0;
+    
+    filtered.slice().reverse().forEach(m => {
+        totalProfits += m.price;
+        list.innerHTML += `
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
+                <div class="flex flex-col gap-1">
+                    <h3 class="font-bold text-lg text-slate-800">${m.customerName}</h3>
+                    <div class="text-[11px] font-bold text-slate-500">
+                        رقم: ${m.phone || '-'} | المادة: ${m.itemName || '-'} | ${m.date}
+                    </div>
+                    <div class="text-sm font-black text-primary mt-1" dir="ltr">${formatMoney(m.price)} د.ع</div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="w-10 h-10 rounded-full bg-slate-50 text-secondary hover:bg-slate-200 transition" onclick="editMonthlySale('${m.id}')"><i class="fa-solid fa-pen"></i></button>
+                    <button class="w-10 h-10 rounded-full bg-red-50 text-red-500 hover:bg-red-200 transition" onclick="deleteMonthlySale('${m.id}')"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>`;
+    });
+    
+    document.getElementById('ms-total-profits').innerText = formatMoney(totalProfits);
+
+    if(!filtered.length) {
+        list.innerHTML = '<div class="text-center text-slate-400 mt-10"><i class="fa-solid fa-calendar-xmark text-4xl mb-2"></i><br>لا توجد مبيعات</div>';
+    }
+}
+
+function editMonthlySale(id) {
+    let m = monthlySales.find(x => x.id == id);
+    document.getElementById('ms-id').value = m.id;
+    document.getElementById('ms-c-name').value = m.customerName;
+    document.getElementById('ms-phone').value = m.phone || '';
+    document.getElementById('ms-price').value = formatMoney(m.price);
+    document.getElementById('ms-search').value = m.itemName || '';
+    document.getElementById('ms-item-id').value = m.itemId || '';
+    document.getElementById('monthlySaleModalTitle').innerText = 'تعديل عملية بيع';
+    openModal('monthlySaleModal');
+}
+
+function deleteMonthlySale(id) {
+    Swal.fire({
+        title: 'حذف عملية البيع؟', text: "لن يتم استرجاع العدد للمخزون تلقائياً", icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#64748b', confirmButtonText: 'احذف', cancelButtonText: 'إلغاء'
+    }).then((result) => {
+        if (result.isConfirmed) { 
+            monthlySales = monthlySales.filter(m => m.id != id); 
+            saveData(); 
+            renderMonthlySales(); 
+            toastMsg('تم الحذف'); 
+        }
+    });
+}
+
+function clearMonthlySales() {
+    Swal.fire({
+        title: 'تصفير الأرباح؟', text: "سيتم مسح جميع عمليات البيع الشهري والأرباح بشكل نهائي!", icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#64748b', confirmButtonText: 'نعم، صَفِّر', cancelButtonText: 'إلغاء'
+    }).then((result) => {
+        if (result.isConfirmed) { 
+            monthlySales = []; 
+            saveData(); 
+            renderMonthlySales(); 
+            toastMsg('تم التصفير'); 
+        }
+    });
+}
+
 // ================ أنيميشن البيع المباشر (3D) ================
 function showMaintenance() {
     let t = document.getElementById('maintenanceToast');
@@ -418,4 +581,4 @@ function showMaintenance() {
 }
 
 // الإقلاع
-window.onload = () => { renderCustomers(); updateAlertBadge(); };
+window.onload = () => { renderCustomers(); updateAlertBadge(); renderMonthlySales(); };
